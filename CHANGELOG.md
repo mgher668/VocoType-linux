@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **IBus surrounding 探针快捷键**：
   - 新增 `Ctrl+Shift+F9` 探针回填
   - 新增脚本 `scripts/test-surrounding-probe.sh` 用于多场景兼容性测试
+- **Fcitx5 语音编辑模式（`Ctrl+F9`）**：
+  - 新增 surrounding 快照与编辑链路（含 SLM 指令编辑）
+  - 新增 `Ctrl+Shift+F9` surrounding 探针输出
+  - 新增确定性编辑命令、导航按键转发与撤销/重做分流
 
 ### Changed
 

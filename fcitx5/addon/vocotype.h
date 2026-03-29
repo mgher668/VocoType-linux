@@ -48,10 +48,16 @@ public:
                     fcitx::InputContextEvent& event) override;
 
 private:
+    enum class RecordingMode {
+        Normal,
+        Long,
+        Edit,
+    };
+
     /**
      * F9 按下：开始录音
      */
-    void startRecording(fcitx::InputContext* ic, bool long_mode);
+    void startRecording(fcitx::InputContext* ic, RecordingMode mode);
 
     /**
      * F9 松开：停止录音并转录
@@ -62,6 +68,40 @@ private:
      * 停止录音，可选择是否转录
      */
     void stopRecording(fcitx::InputContext* ic, bool transcribe);
+
+    /**
+     * 抓取 surrounding 文本快照（编辑模式）
+     */
+    bool captureSurroundingSnapshot(
+        fcitx::InputContext* ic,
+        SurroundingSnapshot& snapshot,
+        std::string& error
+    );
+
+    /**
+     * 输出 surrounding 探针文本
+     */
+    void outputSurroundingProbe(fcitx::InputContext* ic);
+
+    /**
+     * 将 surrounding 文本整体替换为新文本（编辑模式）
+     */
+    void replaceSurroundingText(
+        fcitx::InputContext* ic,
+        const std::string& new_text,
+        const std::string& original_text,
+        int cursor_pos,
+        const std::string& hint
+    );
+
+    /**
+     * 下发导航/快捷键序列到应用
+     */
+    void runKeyEvents(
+        fcitx::InputContext* ic,
+        const std::vector<std::pair<int, int>>& events,
+        const std::string& hint
+    );
 
     /**
      * 更新 UI（预编辑、候选词）
@@ -84,6 +124,11 @@ private:
     void showError(fcitx::InputContext* ic, const std::string& error);
 
     /**
+     * 显示短提示
+     */
+    void showHint(fcitx::InputContext* ic, const std::string& hint);
+
+    /**
      * 检查是否是输入法切换热键
      */
     bool isIMSwitchHotkey(const fcitx::Key& key) const;
@@ -93,10 +138,13 @@ private:
 
     // 录音状态
     bool is_recording_ = false;
-    bool recording_long_mode_ = false;
+    RecordingMode recording_mode_ = RecordingMode::Normal;
     pid_t recorder_pid_ = -1;
     int recorder_stdin_fd_ = -1;
     FILE* recorder_stdout_ = nullptr;
+    SurroundingSnapshot edit_snapshot_;
+    bool has_edit_snapshot_ = false;
+    std::string replace_capability_state_ = "unknown";  // unknown/supported/unsupported
 
     // Python 脚本路径（安装时配置）
     std::string python_venv_path_;

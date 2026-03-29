@@ -5,6 +5,8 @@ VoCoType 离线语音输入法的 Fcitx 5 版本实现。
 ## 功能特性
 
 - **语音输入** - 按住 F9 说话，松开自动识别并输入；`Shift+F9` 为长句模式（可选 SLM 润色）
+- **语音编辑** - `Ctrl+F9` 读取上下文并执行语音编辑指令（替换/删除/插入/导航/撤销重做）
+- **上下文探针** - `Ctrl+Shift+F9` 输出 surrounding 探针信息 `[VT-SURR ...]`
 - **Rime 拼音** - 完整的 Rime 拼音输入支持
 - **完全离线** - 所有识别在本地完成，零网络依赖
 - **轻量高效** - 纯 CPU 推理，仅需 700MB 内存
@@ -16,7 +18,7 @@ VoCoType 离线语音输入法的 Fcitx 5 版本实现。
 Fcitx 5 Framework
     ↓ (C++ API)
 C++ Addon (fcitx5/addon/)
-    ├─ 监听 F9/Shift+F9 按键（语音）
+    ├─ 监听 F9/Shift+F9/Ctrl+F9/Ctrl+Shift+F9 按键（语音/编辑/探针）
     ├─ 监听其他按键（Rime）
     └─ 更新 UI
     ↓ (Unix Socket IPC)
@@ -172,6 +174,8 @@ journalctl --user -u vocotype-fcitx5-backend.service -f
     "timeout_ms": 12000,
     "min_chars": 8,
     "max_tokens": 96,
+    "edit_enabled": true,
+    "edit_max_tokens": 256,
     "enable_thinking": false
   }
 }
@@ -195,6 +199,8 @@ journalctl --user -u vocotype-fcitx5-backend.service -f
     "timeout_ms": 20000,
     "min_chars": 8,
     "max_tokens": 128,
+    "edit_enabled": true,
+    "edit_max_tokens": 256,
     "retry_without_proxy": true
   }
 }
@@ -204,8 +210,29 @@ journalctl --user -u vocotype-fcitx5-backend.service -f
 - `provider`：`local_ephemeral` / `remote`
 - `min_chars`：长句触发阈值（默认 `8`）
 - `max_tokens`：润色输出预算
+- `edit_enabled`：是否启用 `Ctrl+F9` 语音编辑（默认 `true`）
+- `edit_max_tokens`：编辑模式输出预算（默认 `256`）
 - `enable_thinking`：是否允许思考输出（默认 `false`）
 - `retry_without_proxy`：远程请求失败时绕过代理直连重试（默认 `true`）
+
+### 语音编辑模式（Ctrl+F9）
+
+- `Ctrl+F9`：语音编辑模式（先抓取 surrounding，再录音识别编辑指令）
+- `Ctrl+Shift+F9`：输出 surrounding 探针文本
+
+常见编辑能力：
+
+- 文本修改：`把 A 改成 B`、`删除当前句`、`删除上一句`、`删除选中内容`
+- 插入生成：`输入一段对海底捞商家的好评`、`输入一段关于天气的描写`
+- 导航与选择：`全选`、`移动到开头`、`左移三次`、`下一个词`、`选中下一个词`
+- 历史操作：`撤销`、`撤销修改`、`重做`
+- 诊断：`显示上下文信息`（输出 `[VT-SURR ...]`）
+
+行为说明：
+
+- 若目标输入框不支持 surrounding 能力，`Ctrl+F9` 会提示并停止。
+- 执行编辑前会二次校验快照一致性；若期间文本变化，会提示 `输入框内容已变化，请重试`。
+- 撤销/重做采用智能分流：语音编辑历史优先，否则发送应用级快捷键（`Ctrl+Z` / `Ctrl+Shift+Z`）。
 
 ### 2. 重启 Fcitx 5
 
@@ -231,6 +258,8 @@ fcitx5 -r
 - **语音输入**:
   - 按住 `F9`：极速模式（仅 ASR + 标点）
   - 按住 `Shift+F9`：长句模式（ASR + 标点 + 可选 SLM 润色）
+  - 按住 `Ctrl+F9`：编辑模式（读取上下文后执行语音编辑）
+  - 按住 `Ctrl+Shift+F9`：输出 surrounding 探针
 - **拼音输入**: 正常打字，使用 Rime 拼音输入
 
 ## Rime 配置
@@ -374,7 +403,7 @@ C++ Addon 与 Python Backend 通过 Unix Socket 通信，协议格式为 JSON：
 
 **语音识别请求**:
 ```json
-{"type": "transcribe", "audio_path": "/tmp/xxx.wav"}
+{"type": "transcribe", "audio_path": "/tmp/xxx.wav", "long_mode": false, "edit_mode": false}
 ```
 
 **Rime 按键请求**:

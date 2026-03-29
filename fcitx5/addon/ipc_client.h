@@ -37,6 +37,20 @@ struct TranscribeResult {
     bool success = false;
     std::string text;
     std::string error;
+    std::string mode;
+    std::string hint;
+    bool record_history = false;
+    std::vector<std::pair<int, int>> key_events;  // (keyval, state)
+};
+
+/**
+ * surrounding 文本快照（编辑模式）
+ */
+struct SurroundingSnapshot {
+    std::string text;
+    int cursor_pos = 0;
+    int anchor_pos = 0;
+    std::string selected_text;
 };
 
 /**
@@ -64,7 +78,12 @@ public:
      * @param audio_path 音频文件路径
      * @return 识别结果
      */
-    TranscribeResult transcribeAudio(const std::string& audio_path, bool long_mode = false);
+    TranscribeResult transcribeAudio(
+        const std::string& audio_path,
+        bool long_mode = false,
+        bool edit_mode = false,
+        const SurroundingSnapshot* surrounding = nullptr
+    );
 
     /**
      * 预加载 SLM（长句模式按下时调用）

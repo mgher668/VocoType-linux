@@ -79,7 +79,12 @@ std::string IPCClient::sendRequest(const std::string& request) {
     return response;
 }
 
-TranscribeResult IPCClient::transcribeAudio(const std::string& audio_path, bool long_mode) {
+TranscribeResult IPCClient::transcribeAudio(
+    const std::string& audio_path,
+    bool long_mode,
+    bool edit_mode,
+    const SurroundingSnapshot* surrounding
+) {
     TranscribeResult result;
 
     try {
@@ -87,8 +92,17 @@ TranscribeResult IPCClient::transcribeAudio(const std::string& audio_path, bool 
         json request = {
             {"type", "transcribe"},
             {"audio_path", audio_path},
-            {"long_mode", long_mode}
+            {"long_mode", long_mode},
+            {"edit_mode", edit_mode},
         };
+        if (edit_mode && surrounding) {
+            request["surrounding"] = {
+                {"text", surrounding->text},
+                {"cursor", surrounding->cursor_pos},
+                {"anchor", surrounding->anchor_pos},
+                {"selected", surrounding->selected_text},
+            };
+        }
 
         // 发送请求
         std::string response_str = sendRequest(request.dump());
@@ -97,6 +111,16 @@ TranscribeResult IPCClient::transcribeAudio(const std::string& audio_path, bool 
         json response = json::parse(response_str);
 
         result.success = response.value("success", false);
+        result.mode = response.value("mode", "");
+        result.hint = response.value("hint", "");
+        result.record_history = response.value("record_history", false);
+        if (response.contains("key_events") && response["key_events"].is_array()) {
+            for (const auto& event : response["key_events"]) {
+                int keyval = event.value("keyval", 0);
+                int state = event.value("state", 0);
+                result.key_events.emplace_back(keyval, state);
+            }
+        }
         if (result.success) {
             result.text = response.value("text", "");
         } else {
