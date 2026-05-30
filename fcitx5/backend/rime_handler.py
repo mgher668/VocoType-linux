@@ -316,6 +316,16 @@ class RimeHandler:
             # 获取上下文
             context = self.session.get_context()
             if context:
+                # 预编辑文本。即使当前拼写没有候选，也要回传 preedit，
+                # 否则前端看起来会像所有按键都被静默吞掉。
+                composition = getattr(context, "composition", None)
+                preedit = getattr(composition, "preedit", "") if composition else ""
+                if preedit:
+                    result["preedit"] = {
+                        "text": preedit,
+                        "cursor_pos": getattr(composition, "cursor_pos", len(preedit)),
+                    }
+
                 # 候选词
                 menu = getattr(context, "menu", None)
                 candidates = getattr(menu, "candidates", None) or []

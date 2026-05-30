@@ -124,6 +124,11 @@ class Fcitx5Backend:
         logger.info("收到信号 %d，准备退出...", signum)
         self.running = False
 
+    def _reset_rime_state(self) -> None:
+        """Clear any pending Rime composition."""
+        with self._rime_lock:
+            self.rime_handler.reset()
+
     def run(self):
         """运行 IPC 服务器"""
         # 删除旧的 socket 文件
@@ -220,6 +225,8 @@ class Fcitx5Backend:
 
             # 处理请求
             if req_type == 'transcribe':
+                self._reset_rime_state()
+
                 # 语音识别
                 audio_path = request.get('audio_path')
                 long_mode = bool(request.get('long_mode', False))
@@ -288,6 +295,8 @@ class Fcitx5Backend:
                             slm_reason,
                         )
                         response = result
+                        if response.get("success"):
+                            self._reset_rime_state()
                     finally:
                         if long_mode:
                             self._slm_polisher.release()
@@ -313,8 +322,7 @@ class Fcitx5Backend:
 
             elif req_type == 'reset':
                 # 重置 Rime
-                with self._rime_lock:
-                    self.rime_handler.reset()
+                self._reset_rime_state()
                 response = {"success": True}
 
             elif req_type == 'ping':
