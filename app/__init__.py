@@ -2,8 +2,6 @@
 
 from vocotype_version import __version__
 from .config import DEFAULT_CONFIG, ensure_logging_dir, load_config
-from .audio_capture import AudioCapture
-from .transcribe import TranscriptionWorker, TranscriptionResult
 
 __all__ = [
     "DEFAULT_CONFIG",
@@ -14,3 +12,15 @@ __all__ = [
     "TranscriptionResult",
     "__version__",
 ]
+
+
+def __getattr__(name):
+    if name == "AudioCapture":
+        from .audio_capture import AudioCapture
+
+        return AudioCapture
+    if name in ("TranscriptionWorker", "TranscriptionResult"):
+        from .transcribe import TranscriptionResult, TranscriptionWorker
+
+        return {"TranscriptionWorker": TranscriptionWorker, "TranscriptionResult": TranscriptionResult}[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

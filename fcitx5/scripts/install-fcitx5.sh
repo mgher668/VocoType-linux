@@ -48,6 +48,16 @@ PYTHON_MIN_MINOR=11
 PYTHON_MAX_MINOR=12
 DEFAULT_UV_PYTHON="3.12"
 
+# ASR 模型配置（默认保持当前 Paraformer ONNX）
+ASR_BACKEND="paraformer_onnx"
+ASR_MODEL="iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-onnx"
+ASR_LANGUAGE="zh"
+ASR_USE_PUNC=1
+ASR_USE_ITN=1
+ASR_QUANTIZE=1
+ASR_AUTO_EXPORT_ONNX=1
+ASR_INSTALL_EXPORT_DEPS=0
+
 # SLM 可选配置（默认关闭）
 ENABLE_SLM=0
 SLM_PROVIDER="local_ephemeral"
@@ -84,6 +94,69 @@ escape_sed_replacement() {
     value=${value//\\/\\\\}
     value=${value//&/\\&}
     printf '%s' "$value"
+}
+
+write_asr_config_json() {
+    local config_file="$1"
+    local python_bin="$2"
+    local backend="$3"
+    local model="$4"
+    local language="$5"
+    local use_punc="$6"
+    local use_itn="$7"
+    local quantize="$8"
+    local auto_export_onnx="$9"
+
+    "$python_bin" - "$config_file" "$backend" "$model" "$language" "$use_punc" "$use_itn" "$quantize" "$auto_export_onnx" << 'PY'
+import json
+import os
+import sys
+from typing import Any
+
+
+def load_json(path: str) -> dict[str, Any]:
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+target = os.path.expanduser(sys.argv[1])
+backend = sys.argv[2]
+model = sys.argv[3]
+language = sys.argv[4]
+use_punc = bool(int(sys.argv[5]))
+use_itn = bool(int(sys.argv[6]))
+quantize = bool(int(sys.argv[7]))
+auto_export_onnx = bool(int(sys.argv[8]))
+
+cfg = load_json(target)
+asr = cfg.get("asr", {})
+if not isinstance(asr, dict):
+    asr = {}
+
+asr.update(
+    {
+        "backend": backend,
+        "model": model,
+        "language": language,
+        "use_punc": use_punc,
+        "use_itn": use_itn,
+        "quantize": quantize,
+        "auto_export_onnx": auto_export_onnx,
+    }
+)
+cfg["asr"] = asr
+
+os.makedirs(os.path.dirname(target), exist_ok=True)
+with open(target, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+PY
 }
 
 get_python_version() {
@@ -137,6 +210,78 @@ print_python_help() {
     echo "  或使用 conda 创建兼容环境（安装脚本可手动指定解释器）："
     echo "    conda create -n vocotype python=3.12"
     echo "    conda activate vocotype"
+}
+
+install_cpu_torch_if_missing() {
+    if "$PYTHON" -c "import torch" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ "$USE_SYSTEM_PYTHON" = "1" ]; then
+        echo "⚠️  系统 Python 缺少 torch。funasr_onnx 0.4.1 导入 SenseVoice 模块需要 torch。"
+        echo "请手动安装 CPU 版 torch，或改用用户级虚拟环境重新安装："
+        echo "  $PYTHON -m pip install torch --index-url https://download.pytorch.org/whl/cpu"
+        return 1
+    fi
+
+    echo "安装 CPU 版 torch（funasr_onnx 0.4.1 运行依赖）..."
+    if command -v uv &>/dev/null; then
+        uv pip install torch --python "$PYTHON" --index-url https://download.pytorch.org/whl/cpu
+    else
+        "$PYTHON" -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+    fi
+}
+
+install_sensevoice_export_deps_if_missing() {
+    if "$PYTHON" -c "from funasr import AutoModel; import onnxscript, torchaudio" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ "$USE_SYSTEM_PYTHON" = "1" ]; then
+        echo "⚠️  系统 Python 缺少 funasr/torchaudio/onnxscript，无法首次自动导出 SenseVoice ONNX。"
+        echo "请手动安装，或改用用户级虚拟环境重新安装："
+        echo "  $PYTHON -m pip install funasr onnxscript"
+        echo "  $PYTHON -m pip install torchaudio --index-url https://download.pytorch.org/whl/cpu"
+        return 1
+    fi
+
+    echo "安装 SenseVoice ONNX 首次导出依赖 funasr..."
+    if command -v uv &>/dev/null; then
+        uv pip install funasr onnxscript --python "$PYTHON"
+        uv pip install torchaudio --python "$PYTHON" --index-url https://download.pytorch.org/whl/cpu
+    else
+        "$PYTHON" -m pip install funasr onnxscript
+        "$PYTHON" -m pip install torchaudio --index-url https://download.pytorch.org/whl/cpu
+    fi
+}
+
+prewarm_asr_backend() {
+    local config_file="$1"
+
+    if [ "$ASR_BACKEND" != "sensevoice_onnx" ]; then
+        return 0
+    fi
+
+    echo ""
+    echo "预下载并初始化 SenseVoice（首次可能需要较长时间，包含 ONNX 导出）..."
+    if PYTHONPATH="$INSTALL_DIR" VOCOTYPE_FCITX5_CONFIG="$config_file" "$PYTHON" - "$config_file" << 'PY'
+import sys
+
+from app.config import load_config
+from app.funasr_server import FunASRServer
+
+config = load_config(sys.argv[1])
+server = FunASRServer(asr_config=config.get("asr"))
+result = server.initialize()
+print(result)
+raise SystemExit(0 if result.get("success") else 1)
+PY
+    then
+        echo "✓ SenseVoice 预初始化完成"
+    else
+        echo "⚠️  SenseVoice 预初始化失败。请查看日志后重试，或先切回 Paraformer。"
+        return 1
+    fi
 }
 
 write_slm_config_json() {
@@ -219,6 +364,38 @@ PY
 
 echo "=== VoCoType Fcitx 5 语音输入法安装 ==="
 echo "项目目录: $PROJECT_DIR"
+echo ""
+
+echo "请选择语音识别模型："
+echo "  [1] Paraformer ONNX（默认）- 当前稳定方案，体积较小"
+echo "  [2] SenseVoice Small ONNX - 新方案，支持 auto 语言和原生标点/ITN，首次约 250MB"
+echo ""
+read -r -p "请输入选项 (默认 1): " ASR_CHOICE
+case "$ASR_CHOICE" in
+    2)
+        ASR_BACKEND="sensevoice_onnx"
+        ASR_MODEL="iic/SenseVoiceSmall-onnx"
+        ASR_LANGUAGE="auto"
+        ASR_USE_PUNC=0
+        ASR_USE_ITN=1
+        ASR_QUANTIZE=0
+        ASR_AUTO_EXPORT_ONNX=0
+        ASR_INSTALL_EXPORT_DEPS=0
+        echo ""
+        echo "您选择 SenseVoice Small ONNX。首次安装会下载预导出的 ONNX 模型。"
+        read -r -p "SenseVoice 模型名/路径 (默认 $ASR_MODEL): " ASR_MODEL_INPUT
+        if [ -n "$ASR_MODEL_INPUT" ]; then
+            ASR_MODEL="$ASR_MODEL_INPUT"
+        fi
+        ;;
+    ""|1|*)
+        ASR_BACKEND="paraformer_onnx"
+        ASR_LANGUAGE="zh"
+        ASR_USE_PUNC=1
+        echo ""
+        echo "已选择 Paraformer ONNX。"
+        ;;
+esac
 echo ""
 
 echo "是否启用长句 SLM 润色（Shift+F9）？"
@@ -549,7 +726,6 @@ import modelscope  # noqa: F401
 import pyrime  # noqa: F401
 import sounddevice  # noqa: F401
 import soundfile  # noqa: F401
-import funasr_onnx  # noqa: F401
 PY
     then
         echo "系统 Python 缺少依赖。请先执行："
@@ -567,6 +743,20 @@ else
         "$PYTHON" -m pip install -r "$PROJECT_DIR/requirements.txt"
         "$PYTHON" -m pip install pyrime
     fi
+fi
+
+install_cpu_torch_if_missing || exit 1
+if [ "$ASR_INSTALL_EXPORT_DEPS" = "1" ]; then
+    install_sensevoice_export_deps_if_missing || exit 1
+fi
+
+if ! "$PYTHON" - << 'PY' >/dev/null 2>&1
+import funasr_onnx  # noqa: F401
+PY
+then
+    echo "错误: funasr_onnx 导入失败。请确认 Python 依赖安装完整。"
+    echo "  $PYTHON -m pip install -r $PROJECT_DIR/requirements.txt"
+    exit 1
 fi
 
 echo "✓ Python 环境已配置"
@@ -588,8 +778,18 @@ if [ "$ENABLE_SLM" = "1" ] && [ "$SLM_PROVIDER" = "local_ephemeral" ] && [ "$SLM
 fi
 
 echo ""
-echo "[可选] 写入 SLM 配置..."
+echo "写入 ASR / SLM 配置..."
 FCITX5_BACKEND_CONFIG="$HOME/.config/vocotype/fcitx5-backend.json"
+write_asr_config_json \
+    "$FCITX5_BACKEND_CONFIG" \
+    "$PYTHON" \
+    "$ASR_BACKEND" \
+    "$ASR_MODEL" \
+    "$ASR_LANGUAGE" \
+    "$ASR_USE_PUNC" \
+    "$ASR_USE_ITN" \
+    "$ASR_QUANTIZE" \
+    "$ASR_AUTO_EXPORT_ONNX"
 write_slm_config_json \
     "$FCITX5_BACKEND_CONFIG" \
     "$PYTHON" \
@@ -606,6 +806,16 @@ write_slm_config_json \
     "$SLM_ENABLE_THINKING" \
     "$SLM_API_KEY"
 echo "✓ 已写入配置: $FCITX5_BACKEND_CONFIG"
+
+prewarm_asr_backend "$FCITX5_BACKEND_CONFIG" || {
+    echo ""
+    read -p "是否继续安装？ [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "安装已取消"
+        exit 1
+    fi
+}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 8. Rime 输入方案选择（可选）
@@ -881,6 +1091,7 @@ ExecStart=$HOME/.local/bin/vocotype-fcitx5-backend
 Restart=always
 RestartSec=5s
 Environment="PYTHONIOENCODING=UTF-8"
+Environment="NUMBA_CACHE_DIR=/tmp/vocotype-numba-cache"
 
 [Install]
 WantedBy=default.target

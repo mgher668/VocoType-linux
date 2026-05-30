@@ -5,6 +5,7 @@ FunASR模型下载脚本
 并行下载所有模型文件
 """
 import logging
+import os
 import sys
 import json
 import threading
@@ -14,19 +15,26 @@ from app.logging_config import setup_logging
 logger = logging.getLogger(__name__)
 
 
+def _snapshot_download(model_name, revision=None, **kwargs):
+    from modelscope.hub.snapshot_download import snapshot_download
+
+    if revision:
+        kwargs["revision"] = revision
+    return snapshot_download(model_name, **kwargs)
+
+
 def download_model(model_config, progress_callback=None):
     """下载单个模型（使用 modelscope.snapshot_download，无需 funasr/torch）"""
     model_name = model_config["name"]
     model_type = model_config["type"]
+    revision = model_config.get("revision", MODEL_REVISION)
 
     try:
-        from modelscope.hub.snapshot_download import snapshot_download
-
         if progress_callback:
             progress_callback(model_type, "downloading", 0)
 
         # 下载到本地缓存目录
-        snapshot_download(model_name, revision=MODEL_REVISION)
+        _snapshot_download(model_name, revision=revision)
 
         if progress_callback:
             progress_callback(model_type, "completed", 100)
@@ -50,7 +58,7 @@ def main():
     models = get_models_for_download()
     
     # 进度跟踪
-    progress = {"asr": 0, "vad": 0, "punc": 0}
+    progress = {model["type"]: 0 for model in models}
     results = {}
     completed_count = 0
     total_count = len(models)
@@ -139,7 +147,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
 
-def get_model_cache_path(model_name, revision):
+def get_model_cache_path(model_name, revision=None, accept_pt=False):
     """
     离线优先获取模型路径
     1. 先检查本地缓存是否存在且完整
@@ -147,6 +155,11 @@ def get_model_cache_path(model_name, revision):
     3. 如果不存在，才调用 snapshot_download 进行下载
     """
     from pathlib import Path
+
+    local_path = Path(os.path.expanduser(str(model_name)))
+    if local_path.exists():
+        logger.info(f"使用本地模型路径: {local_path}")
+        return str(local_path)
 
     # 构建本地缓存路径（与Rust端保持一致）
     home = Path.home()
@@ -160,9 +173,10 @@ def get_model_cache_path(model_name, revision):
     if model_dir.exists():
         quant_file = model_dir / "model_quant.onnx"
         base_file = model_dir / "model.onnx"
+        pytorch_file = model_dir / "model.pt"
 
         # 只要有一个模型文件存在，就认为缓存有效
-        if quant_file.exists() or base_file.exists():
+        if quant_file.exists() or base_file.exists() or (accept_pt and pytorch_file.exists()):
             logger.info(f"使用本地缓存模型: {model_dir}")
             return str(model_dir)
 
@@ -175,7 +189,7 @@ def get_model_cache_path(model_name, revision):
         # 先尝试纯离线模式（不联网）
         model_dir = snapshot_download(
             model_name,
-            revision=revision,
+            **({"revision": revision} if revision else {}),
             local_files_only=True  # 仅使用本地文件，不联网
         )
         logger.info(f"使用已下载的模型（离线模式）: {model_dir}")
@@ -186,7 +200,7 @@ def get_model_cache_path(model_name, revision):
         # 离线失败，进行在线下载
         model_dir = snapshot_download(
             model_name,
-            revision=revision,
+            **({"revision": revision} if revision else {}),
         )
         logger.info(f"模型下载完成: {model_dir}")
         return model_dir

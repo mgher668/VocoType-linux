@@ -32,12 +32,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "pad_ms": 200,
     },
     "asr": {
+        "backend": "paraformer_onnx",
+        "model": "",
         "use_vad": False,
         "use_punc": True,
         "normalize_chinese_numbers": True,
         "language": "zh",
+        "use_itn": True,
+        "quantize": False,
+        "auto_export_onnx": False,
         "hotword": "",
         "batch_size_s": 60.0,
+        "batch_size": 1,
     },
     "slm": {
         "enabled": False,

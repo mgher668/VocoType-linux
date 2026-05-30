@@ -20,5 +20,7 @@ PyGObject>=3.56.0; python_version >= "3.12"
 modelscope==1.30.0
 
 # 说明：
-# - 默认使用 ONNX 路线；启用本地 SLM 需要 torch（CPU/GPU 版本按需选择）
+# - 默认使用 ONNX 路线；Fcitx5 安装脚本会按需安装 CPU 版 torch
+#   （funasr_onnx 0.4.1 导入 SenseVoice 模块时需要 torch）
+# - 启用本地 SLM 需要 torch/transformers 等额外依赖（CPU/GPU 版本按需选择）
 # - PyGObject 需要系统包：python3-gi, gir1.2-ibus-1.0, gobject-introspection

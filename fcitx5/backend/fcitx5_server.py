@@ -72,14 +72,14 @@ class Fcitx5Backend:
 
         # 语音识别服务
         logger.info("正在初始化 FunASR 服务器...")
-        self.asr_server = FunASRServer()
+        self._asr_options = dict(self.config.get("asr", {}))
+        self.asr_server = FunASRServer(asr_config=self._asr_options)
         asr_result = self.asr_server.initialize()
         if not asr_result['success']:
             logger.error("FunASR 初始化失败: %s", asr_result.get('error'))
             sys.exit(1)
         logger.info("FunASR 服务器初始化成功")
 
-        self._asr_options = dict(self.config.get("asr", {}))
         self._slm_polisher = SLMPolisher(self.config.get("slm", {}))
         logger.info("SLM 长句润色: enabled=%s", self._slm_polisher.enabled)
 

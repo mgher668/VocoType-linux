@@ -55,7 +55,7 @@ class TranscriptionWorker:
             device=audio_cfg.get("device"),
         )
 
-        self.fun_server = FunASRServer()
+        self.fun_server = FunASRServer(asr_config=self.config.get("asr"))
         init_result = self.fun_server.initialize()
         if not init_result.get("success"):
             raise RuntimeError(f"FunASR 初始化失败: {init_result}")
