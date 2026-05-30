@@ -860,13 +860,8 @@ INSTALL_DIR="$HOME/.local/share/vocotype-fcitx5"
 PYTHON="VOCOTYPE_PYTHON"
 SERVER_SCRIPT="$INSTALL_DIR/backend/fcitx5_server.py"
 
-# 检查是否已在运行
-if pgrep -f "fcitx5_server.py" > /dev/null; then
-    echo "VoCoType Fcitx5 Backend 已在运行"
-    exit 0
-fi
-
-# 启动服务
+# 由 systemd 管理生命周期。不要因为已有同名进程就跳过启动，
+# 否则安装更新后可能继续使用旧 Python 进程。
 exec "$PYTHON" "$SERVER_SCRIPT" "$@"
 EOF
 sed -i "s|VOCOTYPE_PYTHON|$PYTHON_SED|g" "$HOME/.local/bin/vocotype-fcitx5-backend"
@@ -894,6 +889,13 @@ EOF
 if command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload >/dev/null 2>&1 || \
         echo "⚠️  systemctl --user daemon-reload 失败，请手动执行"
+    if systemctl --user is-active --quiet vocotype-fcitx5-backend.service >/dev/null 2>&1; then
+        if systemctl --user restart vocotype-fcitx5-backend.service >/dev/null 2>&1; then
+            echo "✓ 已重启后台服务，当前运行进程会加载最新后端代码"
+        else
+            echo "⚠️  后台服务重启失败，请手动执行：systemctl --user restart vocotype-fcitx5-backend.service"
+        fi
+    fi
 fi
 
 echo "✓ 后台服务启动器已创建"
@@ -917,7 +919,7 @@ echo "   方式 A - 重新登录（推荐）"
 echo "     注销并重新登录桌面会话"
 echo ""
 echo "   方式 B - 当前终端临时设置"
-echo "     export FCITX_ADDON_DIRS=~/.local/lib64/fcitx5:~/.local/lib/fcitx5:/usr/lib64/fcitx5"
+echo "     export FCITX_ADDON_DIRS=$HOME/.local/lib64/fcitx5:$HOME/.local/lib/fcitx5:/usr/lib64/fcitx5:/usr/lib/x86_64-linux-gnu/fcitx5:/usr/lib/fcitx5"
 echo ""
 echo "2. 启动后台服务："
 echo ""
@@ -925,7 +927,7 @@ echo "   systemctl --user daemon-reload"
 echo "   systemctl --user enable --now vocotype-fcitx5-backend.service"
 echo ""
 echo "3. 重启 Fcitx 5："
-echo "     fcitx5 -r"
+echo "     FCITX_ADDON_DIRS=$HOME/.local/lib64/fcitx5:$HOME/.local/lib/fcitx5:/usr/lib64/fcitx5:/usr/lib/x86_64-linux-gnu/fcitx5:/usr/lib/fcitx5 fcitx5 -r"
 echo ""
 echo "4. 在 Fcitx 5 配置中添加 VoCoType 输入法："
 echo "     fcitx5-configtool"

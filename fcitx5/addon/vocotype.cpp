@@ -332,6 +332,13 @@ void VoCoTypeAddon::cancelPendingRecordingStop() {
     ptt_release_timer_.reset();
 }
 
+void VoCoTypeAddon::resetRimeState(fcitx::InputContext* ic) {
+    if (ic) {
+        clearUI(ic);
+    }
+    ipc_client_->reset();
+}
+
 bool VoCoTypeAddon::forwardKeyToRime(fcitx::InputContext* ic, fcitx::KeySym keyval,
                                      fcitx::KeyStates states) {
     fcitx::Key key(keyval, states);
@@ -599,12 +606,12 @@ void VoCoTypeAddon::reset(const fcitx::InputMethodEntry& entry,
     auto ic = event.inputContext();
     cancelPendingRecordingStart();
     cancelPendingRecordingStop();
-    clearUI(ic);
-    ipc_client_->reset();
+    resetRimeState(ic);
 }
 
 void VoCoTypeAddon::activate(const fcitx::InputMethodEntry& entry,
                               fcitx::InputContextEvent& event) {
+    resetRimeState(event.inputContext());
     FCITX_DEBUG() << "VoCoType activated";
 }
 
@@ -613,7 +620,7 @@ void VoCoTypeAddon::deactivate(const fcitx::InputMethodEntry& entry,
     auto ic = event.inputContext();
     cancelPendingRecordingStart();
     cancelPendingRecordingStop();
-    clearUI(ic);
+    resetRimeState(ic);
 
     // 如果正在录音，停止录音但不转录
     if (is_recording_) {
@@ -628,6 +635,7 @@ void VoCoTypeAddon::startRecording(fcitx::InputContext* ic, bool long_mode) {
         return;
     }
 
+    resetRimeState(ic);
     ptt_hold_timer_.reset();
     cancelPendingRecordingStop();
 
@@ -935,6 +943,7 @@ void VoCoTypeAddon::commitText(fcitx::InputContext* ic, const std::string& text)
     const std::string commit_text = strip_trailing_period_on_commit_
                                         ? stripTrailingCommitPeriod(text)
                                         : text;
+    clearUI(ic);
     const uint64_t now = fcitx::now(CLOCK_MONOTONIC);
     const std::string current_program = ic->program();
     const std::string current_frontend(ic->frontendName());

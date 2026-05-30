@@ -99,6 +99,7 @@ private:
     void cancelPendingRecordingStart();
     void armPendingRecordingStop(fcitx::InputContext* ic);
     void cancelPendingRecordingStop();
+    void resetRimeState(fcitx::InputContext* ic);
     bool forwardKeyToRime(fcitx::InputContext* ic, fcitx::KeySym keyval,
                           fcitx::KeyStates states);
     bool handlePendingFallbackKey(fcitx::InputContext* ic, fcitx::KeySym keyval,
